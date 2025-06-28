@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GoodReads Books Scatter Plots</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+body{font-family:Segoe UI,Roboto,sans-serif;background:#fafafa;color:#111;margin:0}
+svg{width:100%;height:350px;display:block}
+.axis line,.axis path{stroke:#999;shape-rendering:crispEdges}
+.grid line{stroke:#eee}
+circle{fill:steelblue;opacity:0.2}
+.tooltip{position:absolute;pointer-events:none;background:#fff;padding:3px 6px;border:1px solid #999;font-size:12px;display:none}
+footer{padding:10px;text-align:center;font-size:13px;color:#555}
+</style>
+</head>
+<body>
+<div id="plots"></div>
+<footer>Visualization by Booksviz &mdash; <a href="https://github.com/zyx/" target="_blank">Data source</a></footer>
+<div class="tooltip"></div>
+<script>
+fetch('scatter_data.json').then(r=>r.json()).then(data=>{
+  data.forEach(d=>{d.pages=+d.pages;d.blurb=+d.blurb;d.reviews=+d.reviews;d.rating=+d.rating});
+  const plots=[
+    {x:d=>d.pages,xlab:'Pages',y:d=>d.rating,ylab:'Rating'},
+    {x:d=>d.blurb,xlab:'Blurb Length',y:d=>d.rating,ylab:'Rating'},
+    {x:d=>Math.log10(d.reviews),xlab:'log10 Reviews',y:d=>d.rating,ylab:'Rating'}
+  ];
+  const tooltip=d3.select('.tooltip');
+  plots.forEach(p=>makePlot(p));
+  window.addEventListener('resize',()=>plots.forEach(p=>makePlot(p,true)));
+  function makePlot(p,resize){
+    if(!p.svg){p.div=d3.select('#plots').append('div');p.svg=p.div.append('svg');p.g=p.svg.append('g');}
+    const w=p.div.node().clientWidth,h=350,m={t:20,r:20,b:40,l:50};
+    const iw=w-m.l-m.r,ih=h-m.t-m.b;
+    p.svg.attr('viewBox',`0 0 ${w} ${h}`);
+    const x=d3.scaleLinear().domain(d3.extent(data,p.x)).nice().range([0,iw]);
+    const y=d3.scaleLinear().domain(d3.extent(data,p.y)).nice().range([ih,0]);
+    p.g.attr('transform',`translate(${m.l},${m.t})`).selectAll('*').remove();
+    const xAxis=d3.axisBottom(x).ticks(6).tickSize(-ih);
+    const yAxis=d3.axisLeft(y).ticks(6).tickSize(-iw);
+    p.g.append('g').attr('class','grid').attr('transform',`translate(0,${ih})`).call(xAxis);
+    p.g.append('g').attr('class','grid').call(yAxis);
+    p.g.selectAll('.grid line').attr('stroke','#ddd');
+    p.g.selectAll('.grid path').attr('stroke','#999');
+    p.g.append('g').selectAll('circle').data(data).join('circle').attr('cx',d=>x(p.x(d))).attr('cy',d=>y(p.y(d))).attr('r',6)
+      .on('mousemove',(e,d)=>tooltip.style('display','block').style('left',e.pageX+5+'px').style('top',e.pageY+5+'px').text(`${p.xlab}: ${p.x(d).toFixed(2)}\n${p.ylab}: ${p.y(d).toFixed(2)}`))
+      .on('mouseout',()=>tooltip.style('display','none'));
+    drawLoess(p.x,p.y,x,y,p.g,iw);
+    p.g.append('text').attr('x',iw/2).attr('y',ih+m.b-5).attr('text-anchor','middle').text(p.xlab);
+    p.g.append('text').attr('transform','rotate(-90)').attr('y',-m.l+15).attr('x',-ih/2).attr('text-anchor','middle').text(p.ylab);
+  }
+  function drawLoess(xAcc,yAcc,xScale,yScale,g,w){
+    const n=data.length,b=0.3,k=Math.floor(b*n),xs=data.map(xAcc).sort((a,b)=>a-b),x0=xs[0],x1=xs[n-1],pts=80,line=[];
+    for(let i=0;i<pts;i++){let x=x0+(x1-x0)*i/(pts-1);line.push([x,loess(x)]);} 
+    g.append('path').attr('fill','none').attr('stroke','orange').attr('stroke-width',2)
+      .attr('d',d3.line().x(d=>xScale(d[0])).y(d=>yScale(d[1]))(line));
+    function loess(x){const dists=data.map(d=>Math.abs(xAcc(d)-x)),sorted=dists.slice().sort((a,b)=>a-b),max=sorted[k];
+      let sw=0,sx=0,sy=0,sxx=0,sxy=0; for(let i=0;i<n;i++){let t=Math.abs(xAcc(data[i])-x)/max,w=t>=1?0:(1-t**3)**3,s=xAcc(data[i]),y=yAcc(data[i]);sw+=w;sx+=w*s;sy+=w*y;sxx+=w*s*s;sxy+=w*s*y;} 
+      const mx=sx/sw,my=sy/sw,b1=(sxy-sx*my)/(sxx-sx*mx)||0,b0=my-b1*mx; return b0+b1*x; }
+  }
+});
+</script>
+</body>
+</html>
